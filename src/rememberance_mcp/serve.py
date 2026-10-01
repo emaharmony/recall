@@ -87,8 +87,7 @@ def main():
     if nats_sub:
         logger.info("NATS subscriber active — listening for agent output events")
     try:
-        # start_rest_api blocks; we wrap it to allow graceful shutdown
-        # by running in a thread and checking the shutdown event
+        # start_rest_api blocks with serve_forever; run in daemon thread
         api_thread = threading.Thread(
             target=start_rest_api,
             args=(pipeline, args.host, args.port),
@@ -97,7 +96,8 @@ def main():
         )
         api_thread.start()
 
-        # Wait for shutdown signal
+        # Block main thread until shutdown signal
+        logger.info("Remembrance service running. Press Ctrl+C to stop.")
         _shutdown_event.wait()
         logger.info("Shutting down Remembrance service...")
     except KeyboardInterrupt:
