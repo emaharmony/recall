@@ -1855,6 +1855,7 @@ class RecallHandler(BaseHTTPRequestHandler):
                 category = body.get("category")
                 project = body.get("project_id") or body.get("project")
                 agent = body.get("agent_id") or body.get("agent")
+                prism_task_id = body.get("task_id")
                 # NOTE: Prism's `scope` (project/user) is a different vocabulary
                 # from the gate tier (cold/active/persist), so we let the gate
                 # decide the tier rather than forcing scope onto it.
@@ -1874,12 +1875,14 @@ class RecallHandler(BaseHTTPRequestHandler):
                     project=project,
                     agent=agent,
                     tier=None,
-                    user_id=body.get("owner_id") or body.get("user_id"),
-                    workspace_id=body.get("workspace_id"),
-                    project_id=body.get("project_id"),
-                    repository_id=body.get("repository_id"),
-                    task_id=body.get("task_id"),
-                    session_id=body.get("session_id"),
+                    user_id=(body.get("owner_id") or body.get("user_id"))
+                    if prism_task_id
+                    else None,
+                    workspace_id=body.get("workspace_id") if prism_task_id else None,
+                    project_id=body.get("project_id") if prism_task_id else None,
+                    repository_id=body.get("repository_id") if prism_task_id else None,
+                    task_id=prism_task_id,
+                    session_id=body.get("session_id") if prism_task_id else None,
                     idempotency_key=body.get("idempotency_key"),
                 )
                 self._json_response(result, status=201)
@@ -1936,6 +1939,10 @@ class RecallHandler(BaseHTTPRequestHandler):
             self._safe_json_response(
                 {"error": str(error), "code": error.code},
                 status=_continuity_status(error),
+            )
+        except ValueError as error:
+            self._safe_json_response(
+                {"error": str(error), "code": "idempotency_conflict"}, status=409
             )
         except Exception as e:
             if _is_client_disconnect(e):
