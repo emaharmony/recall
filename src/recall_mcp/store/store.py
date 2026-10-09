@@ -247,11 +247,23 @@ class MemoryStore:
         """Return terminal capture identity without reviving its outbox job."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT memory_id, status FROM raw_captures WHERE id = ?", (capture_id,)
+                """
+                SELECT r.memory_id, r.status, j.status
+                FROM raw_captures AS r
+                LEFT JOIN outbox_jobs AS j ON j.raw_capture_id = r.id
+                WHERE r.id = ?
+                """,
+                (capture_id,),
             ).fetchone()
-        if row is None or row[1] not in ("complete", "skipped", "dead"):
+        if row is None:
             return None
-        return (row[0], str(row[1]))
+        raw_status = str(row[1])
+        outbox_status = str(row[2]) if row[2] is not None else ""
+        if raw_status in ("complete", "skipped"):
+            return (row[0], raw_status)
+        if raw_status == "failed" or outbox_status == "dead":
+            return (row[0], "failed")
+        return None
 
     def claim_outbox_job(
         self,

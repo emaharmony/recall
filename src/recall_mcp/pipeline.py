@@ -353,8 +353,13 @@ class MemoryPipeline:
         completed = self.store.completed_capture(capture_id)
         if completed is not None:
             original_id, status = completed
-            if status == "dead":
-                raise RuntimeError("idempotent capture previously failed permanently")
+            if status == "failed":
+                return {
+                    "id": capture_id,
+                    "decision": "FAILED",
+                    "processing_status": "failed",
+                    "idempotent_replay": True,
+                }
             return {
                 "id": original_id,
                 "decision": "SKIP" if status == "skipped" else "ACCEPT",

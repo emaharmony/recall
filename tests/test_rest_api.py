@@ -393,6 +393,40 @@ class TestCaptureEndpoint:
             urllib.request.urlopen(request)
         assert error.value.code == 409
 
+    def test_capture_idempotency_replays_permanent_failure(self, api_server):
+        pipeline = api_server["pipeline"]
+        task = pipeline.task_service.create_task(
+            user_id="owner-failed", workspace_id="workspace-failed", project_id="project-failed",
+            repository_id="repo-failed", title="Capture", objective="Capture once",
+            created_by="agent-failed", canonical_path="/work/failed-capture",
+        )
+        body = {
+            "text": "A capture that permanently failed", "source": "prizm",
+            "agent": "agent-failed", "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
+            "repository_id": task["repository_id"], "task_id": task["id"],
+            "idempotency_key": "prizm-sync-failed",
+        }
+        request = urllib.request.Request(
+            f"{api_server['base_url']}/capture", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        first = json.loads(urllib.request.urlopen(request).read())
+        with pipeline.store._connect() as conn:
+            conn.execute(
+                "UPDATE raw_captures SET status = 'failed', memory_id = NULL WHERE id = ?",
+                (first["id"],),
+            )
+            conn.execute(
+                "UPDATE outbox_jobs SET status = 'dead' WHERE raw_capture_id = ?",
+                (first["id"],),
+            )
+        second = json.loads(urllib.request.urlopen(request).read())
+        assert second == {
+            "id": first["id"], "decision": "FAILED",
+            "processing_status": "failed", "idempotent_replay": True,
+        }
+
 
 class TestTaskSessionContinuityEndpoints:
     @staticmethod
