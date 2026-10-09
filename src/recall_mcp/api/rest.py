@@ -48,6 +48,7 @@ from recall_mcp.pipeline import MemoryPipeline
 from recall_mcp.cag import CAGRequest, ClientState
 from recall_mcp.continuity import ContinuityError
 from recall_mcp.context import CONTEXT_SCHEMA_VERSION, ContextPackRequest
+from recall_mcp.store.store import IdempotencyConflictError
 from recall_mcp.handoff import (
     HandoffCompletion,
     HandoffRequest,
@@ -1190,6 +1191,10 @@ class RecallHandler(BaseHTTPRequestHandler):
                 {"error": str(error), "code": error.code},
                 status=_continuity_status(error),
             )
+        except IdempotencyConflictError as error:
+            self._safe_json_response(
+                {"error": str(error), "code": "idempotency_conflict"}, status=409
+            )
         except Exception as e:
             if _is_client_disconnect(e):
                 logger.debug(f"GET {path} client disconnected before response was sent")
@@ -1789,6 +1794,7 @@ class RecallHandler(BaseHTTPRequestHandler):
                     repository_id=body.get("repository_id"),
                     task_id=body.get("task_id"),
                     session_id=body.get("session_id"),
+                    idempotency_key=body.get("idempotency_key"),
                 )
                 self._json_response(result, status=201)
 
@@ -1850,6 +1856,7 @@ class RecallHandler(BaseHTTPRequestHandler):
                 category = body.get("category")
                 project = body.get("project_id") or body.get("project")
                 agent = body.get("agent_id") or body.get("agent")
+                prism_task_id = body.get("task_id")
                 # NOTE: Prism's `scope` (project/user) is a different vocabulary
                 # from the gate tier (cold/active/persist), so we let the gate
                 # decide the tier rather than forcing scope onto it.
@@ -1869,6 +1876,15 @@ class RecallHandler(BaseHTTPRequestHandler):
                     project=project,
                     agent=agent,
                     tier=None,
+                    user_id=(body.get("owner_id") or body.get("user_id"))
+                    if prism_task_id
+                    else None,
+                    workspace_id=body.get("workspace_id") if prism_task_id else None,
+                    project_id=body.get("project_id") if prism_task_id else None,
+                    repository_id=body.get("repository_id") if prism_task_id else None,
+                    task_id=prism_task_id,
+                    session_id=body.get("session_id") if prism_task_id else None,
+                    idempotency_key=body.get("idempotency_key"),
                 )
                 self._json_response(result, status=201)
 
@@ -1924,6 +1940,10 @@ class RecallHandler(BaseHTTPRequestHandler):
             self._safe_json_response(
                 {"error": str(error), "code": error.code},
                 status=_continuity_status(error),
+            )
+        except IdempotencyConflictError as error:
+            self._safe_json_response(
+                {"error": str(error), "code": "idempotency_conflict"}, status=409
             )
         except Exception as e:
             if _is_client_disconnect(e):
@@ -2050,9 +2070,7 @@ class RecallHandler(BaseHTTPRequestHandler):
         return stripped
 
     @classmethod
-    def _project_fields(
-        cls, items: list[dict], fields_param: str | None
-    ) -> list[dict]:
+    def _project_fields(cls, items: list[dict], fields_param: str | None) -> list[dict]:
         """Apply ?fields= projection to a list of result dicts.
 
         When *fields_param* is None, strip only the default strip fields
@@ -2072,23 +2090,13 @@ class RecallHandler(BaseHTTPRequestHandler):
         ]
 
     @classmethod
-    def _project_fields_single(
-        cls, item: dict, fields_param: str | None
-    ) -> dict:
+    def _project_fields_single(cls, item: dict, fields_param: str | None) -> dict:
         """Apply ?fields= projection to a single result dict."""
         if fields_param is None:
-            return {
-                k: v
-                for k, v in item.items()
-                if k not in cls._DEFAULT_STRIP_FIELDS
-            }
+            return {k: v for k, v in item.items() if k not in cls._DEFAULT_STRIP_FIELDS}
         keep = {f.strip() for f in fields_param.split(",") if f.strip()}
         if not keep:
-            return {
-                k: v
-                for k, v in item.items()
-                if k not in cls._DEFAULT_STRIP_FIELDS
-            }
+            return {k: v for k, v in item.items() if k not in cls._DEFAULT_STRIP_FIELDS}
         return {k: v for k, v in item.items() if k in keep}
 
     def _json_response(self, data: dict, status: int = 200):

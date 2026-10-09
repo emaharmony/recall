@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 _OUTBOX_STATUSES = ("pending", "processing", "retry", "complete", "dead")
 
 
+class IdempotencyConflictError(ValueError):
+    """A replay key was reused with a different scope or payload."""
+
+
 @dataclass
 class Memory:
     """A single memory entry."""
@@ -128,7 +132,9 @@ class MemoryStore:
         """Open a transactional connection with enforcement enabled."""
         connection = sqlite3.connect(str(self.db_path))
         connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=30000")  # 30s — prevents hangs during WAL writes
+        connection.execute(
+            "PRAGMA busy_timeout=30000"
+        )  # 30s — prevents hangs during WAL writes
         connection.execute("PRAGMA journal_mode=WAL")
         try:
             with connection:
@@ -156,6 +162,8 @@ class MemoryStore:
         session_id: Optional[str] = None,
         category: Optional[str] = None,
         tier: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+        idempotency_hash: Optional[str] = None,
     ) -> tuple[str, str]:
         """Atomically persist a raw capture and its processing job."""
         now = time.time()
@@ -163,16 +171,70 @@ class MemoryStore:
         job_id = f"outbox_{uuid.uuid4().hex}"
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            if idempotency_key:
+                existing = conn.execute(
+                    """
+                    SELECT id, idempotency_hash FROM raw_captures
+                    WHERE COALESCE(user_id, '') = COALESCE(?, '')
+                      AND COALESCE(workspace_id, '') = COALESCE(?, '')
+                      AND COALESCE(project_id, '') = COALESCE(?, '')
+                      AND COALESCE(repository_id, '') = COALESCE(?, '')
+                      AND COALESCE(task_id, '') = COALESCE(?, '')
+                      AND COALESCE(session_id, '') = COALESCE(?, '')
+                      AND agent = ? AND idempotency_key = ?
+                    """,
+                    (
+                        user_id,
+                        workspace_id,
+                        project_id,
+                        repository_id,
+                        task_id,
+                        session_id,
+                        agent,
+                        idempotency_key,
+                    ),
+                ).fetchone()
+                if existing is not None:
+                    if existing[1] != idempotency_hash:
+                        raise IdempotencyConflictError(
+                            "idempotency key is already bound to a different capture"
+                        )
+                    job = conn.execute(
+                        "SELECT id FROM outbox_jobs WHERE raw_capture_id = ?",
+                        (existing[0],),
+                    ).fetchone()
+                    if job is None:
+                        raise RuntimeError(
+                            "idempotent capture is missing its outbox job"
+                        )
+                    return str(existing[0]), str(job[0])
+                # A key is caller-owned identity, so silently creating a new
+                # capture when its actor or formal scope changes would allow a
+                # retry to fork across capture entry points.  Keep this check
+                # in the shared enqueue transaction so REST, MCP, NATS, and
+                # library callers receive the same conflict behavior.
+                collision = conn.execute(
+                    """
+                    SELECT id FROM raw_captures
+                    WHERE idempotency_key = ?
+                    LIMIT 1
+                    """,
+                    (idempotency_key,),
+                ).fetchone()
+                if collision is not None:
+                    raise IdempotencyConflictError(
+                        "idempotency key is already bound to a different capture"
+                    )
             conn.execute(
                 """
                 INSERT INTO raw_captures (
                     id, content, source, project, agent,
                     user_id, workspace_id, project_id, repository_id,
                     task_id, session_id,
-                    requested_category, requested_tier,
+                    requested_category, requested_tier, idempotency_key, idempotency_hash,
                     received_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     capture_id,
@@ -188,6 +250,8 @@ class MemoryStore:
                     session_id,
                     category,
                     tier,
+                    idempotency_key,
+                    idempotency_hash,
                     now,
                     now,
                 ),
@@ -217,6 +281,28 @@ class MemoryStore:
             content, source=source, project=project, agent=agent
         )
         return capture_id
+
+    def completed_capture(self, capture_id: str) -> tuple[str | None, str] | None:
+        """Return terminal capture identity without reviving its outbox job."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT r.memory_id, r.status, j.status
+                FROM raw_captures AS r
+                LEFT JOIN outbox_jobs AS j ON j.raw_capture_id = r.id
+                WHERE r.id = ?
+                """,
+                (capture_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        raw_status = str(row[1])
+        outbox_status = str(row[2]) if row[2] is not None else ""
+        if raw_status in ("complete", "skipped"):
+            return (row[0], raw_status)
+        if raw_status == "failed" or outbox_status == "dead":
+            return (row[0], "failed")
+        return None
 
     def claim_outbox_job(
         self,

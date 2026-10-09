@@ -2311,6 +2311,30 @@ def _migration_fk_cascade_repair(conn: sqlite3.Connection) -> None:
         _require_columns(conn, table, columns)
 
 
+def _migration_capture_idempotency(conn: sqlite3.Connection) -> None:
+    """Bind capture replay keys to their complete caller scope and payload."""
+    _add_columns(
+        conn,
+        "raw_captures",
+        {
+            "idempotency_key": "TEXT",
+            "idempotency_hash": "TEXT",
+        },
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_captures_idempotency_scope
+        ON raw_captures(
+            COALESCE(user_id, ''), COALESCE(workspace_id, ''),
+            COALESCE(project_id, ''), COALESCE(repository_id, ''),
+            COALESCE(task_id, ''), COALESCE(session_id, ''),
+            agent, idempotency_key
+        ) WHERE idempotency_key IS NOT NULL
+        """
+    )
+    _require_columns(conn, "raw_captures", {"idempotency_key", "idempotency_hash"})
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "core_memory", _migration_core_memory),
     Migration(2, "memory_v2", _migration_memory_v2),
@@ -2325,6 +2349,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(11, "cag_context_cache", _migration_cag_context_cache),
     Migration(12, "memory_chunks", _migration_memory_chunks),
     Migration(13, "fk_cascade_repair", _migration_fk_cascade_repair),
+    Migration(14, "capture_idempotency", _migration_capture_idempotency),
 )
 CURRENT_SCHEMA_VERSION = MIGRATIONS[-1].version
 

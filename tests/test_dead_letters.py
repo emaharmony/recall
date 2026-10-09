@@ -1,16 +1,11 @@
 """Tests for the recall-admin dead-letters command."""
 
-import json
 import sqlite3
-import subprocess
-import sys
 from pathlib import Path
-
-import pytest
 
 from recall_mcp.admin import build_parser, command_dead_letters
 from recall_mcp.config import Settings
-from recall_mcp.store.store import MemoryStore, OutboxJob
+from recall_mcp.store.store import MemoryStore
 
 
 def _make_store(tmp_path: Path) -> MemoryStore:
@@ -44,7 +39,7 @@ def _insert_dead_job(db_path: Path, job_id: str = "dead_1") -> str:
 
 class TestDeadLettersCommand:
     def test_list_dead_letters_empty(self, tmp_path):
-        store = _make_store(tmp_path)
+        _make_store(tmp_path)
         settings = Settings(DB_PATH=tmp_path / "memory.db", EMBEDDINGS_ENABLED=False)
         parser = build_parser()
         args = parser.parse_args(["dead-letters"])
@@ -52,7 +47,7 @@ class TestDeadLettersCommand:
         assert code == 0
 
     def test_list_dead_letters_with_entries(self, tmp_path):
-        store = _make_store(tmp_path)
+        _make_store(tmp_path)
         _insert_dead_job(tmp_path / "memory.db")
         settings = Settings(DB_PATH=tmp_path / "memory.db", EMBEDDINGS_ENABLED=False)
         parser = build_parser()
@@ -61,7 +56,7 @@ class TestDeadLettersCommand:
         assert code == 0
 
     def test_replay_dead_letters(self, tmp_path):
-        store = _make_store(tmp_path)
+        _make_store(tmp_path)
         job_id = _insert_dead_job(tmp_path / "memory.db")
         settings = Settings(DB_PATH=tmp_path / "memory.db", EMBEDDINGS_ENABLED=False)
         parser = build_parser()
@@ -77,7 +72,7 @@ class TestDeadLettersCommand:
             assert row[0] != "dead"
 
     def test_replay_specific_job_id(self, tmp_path):
-        store = _make_store(tmp_path)
+        _make_store(tmp_path)
         _insert_dead_job(tmp_path / "memory.db", "dead_1")
         _insert_dead_job(tmp_path / "memory.db", "dead_2")
         settings = Settings(DB_PATH=tmp_path / "memory.db", EMBEDDINGS_ENABLED=False)

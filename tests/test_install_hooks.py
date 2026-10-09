@@ -940,7 +940,7 @@ def test_claude_cli_present_used_when_config_path_is_default(monkeypatch, tmp_pa
 # ---------------------------------------------------------------------------
 
 
-_FAKE_CODEX_CLI_SCRIPT = r'''
+_FAKE_CODEX_CLI_SCRIPT = r"""
 import json
 import re
 import sys
@@ -1019,7 +1019,7 @@ if len(argv) >= 3 and argv[0] == "mcp" and argv[1] == "add":
     sys.exit(0)
 
 sys.exit(1)
-'''
+"""
 
 
 def _write_fake_codex_cli(tmp_path: Path, config_toml_path: Path) -> Path:
@@ -1058,7 +1058,7 @@ def test_codex_migrates_stale_remembrance_preserving_tool_subtables(
     config_toml_path = tmp_path / "home" / ".codex" / "config.toml"
     config_toml_path.parent.mkdir(parents=True)
     config_toml_path.write_text(
-        '[mcp_servers.remembrance]\n'
+        "[mcp_servers.remembrance]\n"
         'command = "remembrance-mcp"\n'
         "args = []\n"
         "\n"
@@ -1094,7 +1094,7 @@ def test_codex_migration_dry_run_preserves_subtables_reports_without_writing(
     config_toml_path = tmp_path / "home" / ".codex" / "config.toml"
     config_toml_path.parent.mkdir(parents=True)
     original_text = (
-        '[mcp_servers.remembrance]\n'
+        "[mcp_servers.remembrance]\n"
         'command = "remembrance-mcp"\n'
         "args = []\n"
         "\n"
@@ -1118,7 +1118,7 @@ def test_codex_migration_with_subtables_idempotent_across_two_runs(
     config_toml_path = tmp_path / "home" / ".codex" / "config.toml"
     config_toml_path.parent.mkdir(parents=True)
     config_toml_path.write_text(
-        '[mcp_servers.remembrance]\n'
+        "[mcp_servers.remembrance]\n"
         'command = "remembrance-mcp"\n'
         "args = []\n"
         "\n"
