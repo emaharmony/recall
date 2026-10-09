@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 _OUTBOX_STATUSES = ("pending", "processing", "retry", "complete", "dead")
 
 
+class IdempotencyConflictError(ValueError):
+    """A replay key was reused with a different scope or payload."""
+
+
 @dataclass
 class Memory:
     """A single memory entry."""
@@ -181,7 +185,9 @@ class MemoryStore:
                 ).fetchone()
                 if existing is not None:
                     if existing[1] != idempotency_hash:
-                        raise ValueError("idempotency key is already bound to a different capture")
+                        raise IdempotencyConflictError(
+                            "idempotency key is already bound to a different capture"
+                        )
                     job = conn.execute("SELECT id FROM outbox_jobs WHERE raw_capture_id = ?", (existing[0],)).fetchone()
                     if job is None:
                         raise RuntimeError("idempotent capture is missing its outbox job")
@@ -200,7 +206,9 @@ class MemoryStore:
                     (idempotency_key,),
                 ).fetchone()
                 if collision is not None:
-                    raise ValueError("idempotency key is already bound to a different capture")
+                    raise IdempotencyConflictError(
+                        "idempotency key is already bound to a different capture"
+                    )
             conn.execute(
                 """
                 INSERT INTO raw_captures (

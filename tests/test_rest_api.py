@@ -393,6 +393,57 @@ class TestCaptureEndpoint:
             urllib.request.urlopen(request)
         assert error.value.code == 409
 
+    def test_capture_idempotency_replays_skip_without_waiting(self, api_server):
+        pipeline = api_server["pipeline"]
+        task = pipeline.task_service.create_task(
+            user_id="owner-skip", workspace_id="workspace-skip", project_id="project-skip",
+            repository_id="repo-skip", title="Capture", objective="Skip once",
+            created_by="agent-skip", canonical_path="/work/skip-capture",
+        )
+        body = {
+            "text": "A capture that should be skipped", "source": "prizm",
+            "agent": "agent-skip", "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
+            "repository_id": task["repository_id"], "task_id": task["id"],
+            "idempotency_key": "prizm-sync-skip",
+        }
+        request = urllib.request.Request(
+            f"{api_server['base_url']}/capture", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        first = json.loads(urllib.request.urlopen(request).read())
+        with pipeline.store._connect() as conn:
+            conn.execute(
+                "UPDATE raw_captures SET status = 'skipped', memory_id = NULL WHERE id = ?",
+                (first["id"],),
+            )
+            conn.execute(
+                "UPDATE outbox_jobs SET status = 'complete' WHERE raw_capture_id = ?",
+                (first["id"],),
+            )
+        second = json.loads(urllib.request.urlopen(request).read())
+        assert second == {
+            "id": None, "decision": "SKIP",
+            "idempotent_replay": True, "processing_status": "complete",
+        }
+
+    def test_unrelated_value_error_is_not_reported_as_idempotency_conflict(
+        self, api_server, monkeypatch
+    ):
+        def fail(*_args, **_kwargs):
+            raise ValueError("unexpected internal validation failure")
+
+        monkeypatch.setattr(api_server["pipeline"], "capture", fail)
+        request = urllib.request.Request(
+            f"{api_server['base_url']}/capture",
+            data=json.dumps({"text": "capture"}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        assert error.value.code == 500
+        assert json.loads(error.value.read()) == {"error": "Internal server error"}
+
     def test_capture_idempotency_rejects_actor_or_scope_collision(self, api_server):
         pipeline = api_server["pipeline"]
         task = pipeline.task_service.create_task(

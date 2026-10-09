@@ -48,6 +48,7 @@ from recall_mcp.pipeline import MemoryPipeline
 from recall_mcp.cag import CAGRequest, ClientState
 from recall_mcp.continuity import ContinuityError
 from recall_mcp.context import CONTEXT_SCHEMA_VERSION, ContextPackRequest
+from recall_mcp.store.store import IdempotencyConflictError
 from recall_mcp.handoff import (
     HandoffCompletion,
     HandoffRequest,
@@ -1190,7 +1191,7 @@ class RecallHandler(BaseHTTPRequestHandler):
                 {"error": str(error), "code": error.code},
                 status=_continuity_status(error),
             )
-        except ValueError as error:
+        except IdempotencyConflictError as error:
             self._safe_json_response(
                 {"error": str(error), "code": "idempotency_conflict"}, status=409
             )
@@ -1940,7 +1941,7 @@ class RecallHandler(BaseHTTPRequestHandler):
                 {"error": str(error), "code": error.code},
                 status=_continuity_status(error),
             )
-        except ValueError as error:
+        except IdempotencyConflictError as error:
             self._safe_json_response(
                 {"error": str(error), "code": "idempotency_conflict"}, status=409
             )
