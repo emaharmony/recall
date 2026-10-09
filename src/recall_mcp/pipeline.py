@@ -122,6 +122,7 @@ class MemoryPipeline:
             # produces silently wrong search results.
             try:
                 import sqlite3 as _sqlite3
+
                 _conn = _sqlite3.connect(str(self.settings.DB_PATH))
                 _existing = _conn.execute(
                     "SELECT DISTINCT embedding_model FROM memories "
@@ -324,12 +325,26 @@ class MemoryPipeline:
                     )
         idempotency_hash = None
         if idempotency_key:
-            idempotency_hash = hashlib.sha256(json.dumps({
-                "text": text, "source": source, "category": category, "tier": tier,
-                "project": project, "agent": agent, "user_id": user_id,
-                "workspace_id": workspace_id, "project_id": project_id,
-                "repository_id": repository_id, "task_id": task_id, "session_id": session_id,
-            }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+            idempotency_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "text": text,
+                        "source": source,
+                        "category": category,
+                        "tier": tier,
+                        "project": project,
+                        "agent": agent,
+                        "user_id": user_id,
+                        "workspace_id": workspace_id,
+                        "project_id": project_id,
+                        "repository_id": repository_id,
+                        "task_id": task_id,
+                        "session_id": session_id,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
         capture_id, _job_id = self.store.enqueue_capture(
             text,
             source=source,

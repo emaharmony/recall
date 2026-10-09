@@ -2070,9 +2070,7 @@ class RecallHandler(BaseHTTPRequestHandler):
         return stripped
 
     @classmethod
-    def _project_fields(
-        cls, items: list[dict], fields_param: str | None
-    ) -> list[dict]:
+    def _project_fields(cls, items: list[dict], fields_param: str | None) -> list[dict]:
         """Apply ?fields= projection to a list of result dicts.
 
         When *fields_param* is None, strip only the default strip fields
@@ -2092,23 +2090,13 @@ class RecallHandler(BaseHTTPRequestHandler):
         ]
 
     @classmethod
-    def _project_fields_single(
-        cls, item: dict, fields_param: str | None
-    ) -> dict:
+    def _project_fields_single(cls, item: dict, fields_param: str | None) -> dict:
         """Apply ?fields= projection to a single result dict."""
         if fields_param is None:
-            return {
-                k: v
-                for k, v in item.items()
-                if k not in cls._DEFAULT_STRIP_FIELDS
-            }
+            return {k: v for k, v in item.items() if k not in cls._DEFAULT_STRIP_FIELDS}
         keep = {f.strip() for f in fields_param.split(",") if f.strip()}
         if not keep:
-            return {
-                k: v
-                for k, v in item.items()
-                if k not in cls._DEFAULT_STRIP_FIELDS
-            }
+            return {k: v for k, v in item.items() if k not in cls._DEFAULT_STRIP_FIELDS}
         return {k: v for k, v in item.items() if k in keep}
 
     def _json_response(self, data: dict, status: int = 200):

@@ -1227,7 +1227,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Import at most N source memory rows (does not limit salvage).",
     )
     dead = subparsers.add_parser("dead-letters")
-    dead.add_argument("--replay", action="store_true", help="Reset dead jobs back to pending for retry.")
+    dead.add_argument(
+        "--replay",
+        action="store_true",
+        help="Reset dead jobs back to pending for retry.",
+    )
     dead.add_argument("--job-id", help="Replay only this specific job ID (optional).")
     subparsers.add_parser("version")
     return parser

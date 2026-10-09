@@ -1114,7 +1114,9 @@ def install_codex_mcp(
         preserved = _capture_codex_subtables_to_preserve("remembrance")
         if dry_run:
             if preserved:
-                names = ", ".join(f"mcp_servers.recall.{suffix}" for suffix, _ in preserved)
+                names = ", ".join(
+                    f"mcp_servers.recall.{suffix}" for suffix, _ in preserved
+                )
                 return StepResult(
                     "dry_run",
                     "would remove superseded 'remembrance' entry "

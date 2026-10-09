@@ -132,7 +132,9 @@ class MemoryStore:
         """Open a transactional connection with enforcement enabled."""
         connection = sqlite3.connect(str(self.db_path))
         connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=30000")  # 30s — prevents hangs during WAL writes
+        connection.execute(
+            "PRAGMA busy_timeout=30000"
+        )  # 30s — prevents hangs during WAL writes
         connection.execute("PRAGMA journal_mode=WAL")
         try:
             with connection:
@@ -181,16 +183,30 @@ class MemoryStore:
                       AND COALESCE(session_id, '') = COALESCE(?, '')
                       AND agent = ? AND idempotency_key = ?
                     """,
-                    (user_id, workspace_id, project_id, repository_id, task_id, session_id, agent, idempotency_key),
+                    (
+                        user_id,
+                        workspace_id,
+                        project_id,
+                        repository_id,
+                        task_id,
+                        session_id,
+                        agent,
+                        idempotency_key,
+                    ),
                 ).fetchone()
                 if existing is not None:
                     if existing[1] != idempotency_hash:
                         raise IdempotencyConflictError(
                             "idempotency key is already bound to a different capture"
                         )
-                    job = conn.execute("SELECT id FROM outbox_jobs WHERE raw_capture_id = ?", (existing[0],)).fetchone()
+                    job = conn.execute(
+                        "SELECT id FROM outbox_jobs WHERE raw_capture_id = ?",
+                        (existing[0],),
+                    ).fetchone()
                     if job is None:
-                        raise RuntimeError("idempotent capture is missing its outbox job")
+                        raise RuntimeError(
+                            "idempotent capture is missing its outbox job"
+                        )
                     return str(existing[0]), str(job[0])
                 # A key is caller-owned identity, so silently creating a new
                 # capture when its actor or formal scope changes would allow a

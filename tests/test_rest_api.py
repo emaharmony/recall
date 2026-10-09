@@ -364,30 +364,45 @@ class TestCaptureEndpoint:
     def test_capture_idempotency_reuses_original_id_within_scope(self, api_server):
         pipeline = api_server["pipeline"]
         task = pipeline.task_service.create_task(
-            user_id="owner-a", workspace_id="workspace-a", project_id="project-a",
-            repository_id="repo-a", title="Capture", objective="Capture once",
-            created_by="agent-a", canonical_path="/work/capture",
+            user_id="owner-a",
+            workspace_id="workspace-a",
+            project_id="project-a",
+            repository_id="repo-a",
+            title="Capture",
+            objective="Capture once",
+            created_by="agent-a",
+            canonical_path="/work/capture",
         )
         body = {
-            "text": "A durable scoped capture", "source": "prizm",
-            "agent": "agent-a", "user_id": task["user_id"],
-            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
-            "repository_id": task["repository_id"], "task_id": task["id"],
+            "text": "A durable scoped capture",
+            "source": "prizm",
+            "agent": "agent-a",
+            "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"],
+            "project_id": task["project_id"],
+            "repository_id": task["repository_id"],
+            "task_id": task["id"],
             "idempotency_key": "prizm-sync-1",
         }
+
         def capture(payload):
             request = urllib.request.Request(
-                f"{api_server['base_url']}/capture", data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"}, method="POST",
+                f"{api_server['base_url']}/capture",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
             return json.loads(urllib.request.urlopen(request).read())
+
         first = capture(body)
         second = capture(body)
         assert first["id"] == second["id"]
         changed = dict(body, text="different")
         request = urllib.request.Request(
-            f"{api_server['base_url']}/capture", data=json.dumps(changed).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+            f"{api_server['base_url']}/capture",
+            data=json.dumps(changed).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         with pytest.raises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(request)
@@ -396,20 +411,31 @@ class TestCaptureEndpoint:
     def test_capture_idempotency_replays_skip_without_waiting(self, api_server):
         pipeline = api_server["pipeline"]
         task = pipeline.task_service.create_task(
-            user_id="owner-skip", workspace_id="workspace-skip", project_id="project-skip",
-            repository_id="repo-skip", title="Capture", objective="Skip once",
-            created_by="agent-skip", canonical_path="/work/skip-capture",
+            user_id="owner-skip",
+            workspace_id="workspace-skip",
+            project_id="project-skip",
+            repository_id="repo-skip",
+            title="Capture",
+            objective="Skip once",
+            created_by="agent-skip",
+            canonical_path="/work/skip-capture",
         )
         body = {
-            "text": "A capture that should be skipped", "source": "prizm",
-            "agent": "agent-skip", "user_id": task["user_id"],
-            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
-            "repository_id": task["repository_id"], "task_id": task["id"],
+            "text": "A capture that should be skipped",
+            "source": "prizm",
+            "agent": "agent-skip",
+            "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"],
+            "project_id": task["project_id"],
+            "repository_id": task["repository_id"],
+            "task_id": task["id"],
             "idempotency_key": "prizm-sync-skip",
         }
         request = urllib.request.Request(
-            f"{api_server['base_url']}/capture", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+            f"{api_server['base_url']}/capture",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         first = json.loads(urllib.request.urlopen(request).read())
         with pipeline.store._connect() as conn:
@@ -423,8 +449,10 @@ class TestCaptureEndpoint:
             )
         second = json.loads(urllib.request.urlopen(request).read())
         assert second == {
-            "id": None, "decision": "SKIP",
-            "idempotent_replay": True, "processing_status": "complete",
+            "id": None,
+            "decision": "SKIP",
+            "idempotent_replay": True,
+            "processing_status": "complete",
         }
 
     def test_unrelated_value_error_is_not_reported_as_idempotency_conflict(
@@ -437,7 +465,8 @@ class TestCaptureEndpoint:
         request = urllib.request.Request(
             f"{api_server['base_url']}/capture",
             data=json.dumps({"text": "capture"}).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         with pytest.raises(urllib.error.HTTPError) as error:
             urllib.request.urlopen(request)
@@ -447,22 +476,33 @@ class TestCaptureEndpoint:
     def test_capture_idempotency_rejects_actor_or_scope_collision(self, api_server):
         pipeline = api_server["pipeline"]
         task = pipeline.task_service.create_task(
-            user_id="owner-collision", workspace_id="workspace-collision", project_id="project-collision",
-            repository_id="repo-collision", title="Capture", objective="Capture once",
-            created_by="agent-a", canonical_path="/work/collision",
+            user_id="owner-collision",
+            workspace_id="workspace-collision",
+            project_id="project-collision",
+            repository_id="repo-collision",
+            title="Capture",
+            objective="Capture once",
+            created_by="agent-a",
+            canonical_path="/work/collision",
         )
         base = {
-            "text": "A capture with an actor binding", "source": "prizm",
-            "agent": "agent-a", "user_id": task["user_id"],
-            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
-            "repository_id": task["repository_id"], "task_id": task["id"],
+            "text": "A capture with an actor binding",
+            "source": "prizm",
+            "agent": "agent-a",
+            "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"],
+            "project_id": task["project_id"],
+            "repository_id": task["repository_id"],
+            "task_id": task["id"],
             "idempotency_key": "prizm-cross-actor",
         }
 
         def capture(payload):
             request = urllib.request.Request(
-                f"{api_server['base_url']}/capture", data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"}, method="POST",
+                f"{api_server['base_url']}/capture",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
             return json.loads(urllib.request.urlopen(request).read())
 
@@ -472,19 +512,26 @@ class TestCaptureEndpoint:
         assert actor_error.value.code == 409
 
         other_task = pipeline.task_service.create_task(
-            user_id="owner-other", workspace_id="workspace-other", project_id="project-other",
-            repository_id="repo-other", title="Other capture", objective="Other scope",
-            created_by="agent-a", canonical_path="/work/other-collision",
+            user_id="owner-other",
+            workspace_id="workspace-other",
+            project_id="project-other",
+            repository_id="repo-other",
+            title="Other capture",
+            objective="Other scope",
+            created_by="agent-a",
+            canonical_path="/work/other-collision",
         )
         with pytest.raises(urllib.error.HTTPError) as scope_error:
-            capture({
-                **base,
-                "user_id": other_task["user_id"],
-                "workspace_id": other_task["workspace_id"],
-                "project_id": other_task["project_id"],
-                "repository_id": other_task["repository_id"],
-                "task_id": other_task["id"],
-            })
+            capture(
+                {
+                    **base,
+                    "user_id": other_task["user_id"],
+                    "workspace_id": other_task["workspace_id"],
+                    "project_id": other_task["project_id"],
+                    "repository_id": other_task["repository_id"],
+                    "task_id": other_task["id"],
+                }
+            )
         assert scope_error.value.code == 409
 
         with pipeline.store._connect() as conn:
@@ -495,7 +542,9 @@ class TestCaptureEndpoint:
         assert count == 1
         assert first["id"]
 
-    def test_v1_ingest_without_idempotency_key_keeps_connector_compatibility(self, api_server):
+    def test_v1_ingest_without_idempotency_key_keeps_connector_compatibility(
+        self, api_server
+    ):
         body = {
             "content": "A legacy Prism connector capture",
             "source_agent": "prism:trusted",
@@ -506,7 +555,8 @@ class TestCaptureEndpoint:
         request = urllib.request.Request(
             f"{api_server['base_url']}/v1/memory/ingest",
             data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         response = urllib.request.urlopen(request)
         result = json.loads(response.read())
@@ -516,20 +566,31 @@ class TestCaptureEndpoint:
     def test_capture_idempotency_replays_permanent_failure(self, api_server):
         pipeline = api_server["pipeline"]
         task = pipeline.task_service.create_task(
-            user_id="owner-failed", workspace_id="workspace-failed", project_id="project-failed",
-            repository_id="repo-failed", title="Capture", objective="Capture once",
-            created_by="agent-failed", canonical_path="/work/failed-capture",
+            user_id="owner-failed",
+            workspace_id="workspace-failed",
+            project_id="project-failed",
+            repository_id="repo-failed",
+            title="Capture",
+            objective="Capture once",
+            created_by="agent-failed",
+            canonical_path="/work/failed-capture",
         )
         body = {
-            "text": "A capture that permanently failed", "source": "prizm",
-            "agent": "agent-failed", "user_id": task["user_id"],
-            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
-            "repository_id": task["repository_id"], "task_id": task["id"],
+            "text": "A capture that permanently failed",
+            "source": "prizm",
+            "agent": "agent-failed",
+            "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"],
+            "project_id": task["project_id"],
+            "repository_id": task["repository_id"],
+            "task_id": task["id"],
             "idempotency_key": "prizm-sync-failed",
         }
         request = urllib.request.Request(
-            f"{api_server['base_url']}/capture", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+            f"{api_server['base_url']}/capture",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
         first = json.loads(urllib.request.urlopen(request).read())
         with pipeline.store._connect() as conn:
@@ -543,8 +604,10 @@ class TestCaptureEndpoint:
             )
         second = json.loads(urllib.request.urlopen(request).read())
         assert second == {
-            "id": first["id"], "decision": "FAILED",
-            "processing_status": "failed", "idempotent_replay": True,
+            "id": first["id"],
+            "decision": "FAILED",
+            "processing_status": "failed",
+            "idempotent_replay": True,
         }
 
 
@@ -1079,9 +1142,7 @@ class TestFieldsProjection:
         capture_data = json.loads(resp.read())
         mem_id = capture_data["id"]
 
-        resp = urllib.request.urlopen(
-            f"{api_server['base_url']}/memory/{mem_id}"
-        )
+        resp = urllib.request.urlopen(f"{api_server['base_url']}/memory/{mem_id}")
         data = json.loads(resp.read())
         assert "embedding" not in data
         assert "content" in data
