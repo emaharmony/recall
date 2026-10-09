@@ -361,6 +361,38 @@ class TestCaptureEndpoint:
         except urllib.error.HTTPError as e:
             assert e.code == 400
 
+    def test_capture_idempotency_reuses_original_id_within_scope(self, api_server):
+        pipeline = api_server["pipeline"]
+        task = pipeline.task_service.create_task(
+            user_id="owner-a", workspace_id="workspace-a", project_id="project-a",
+            repository_id="repo-a", title="Capture", objective="Capture once",
+            created_by="agent-a", canonical_path="/work/capture",
+        )
+        body = {
+            "text": "A durable scoped capture", "source": "prizm",
+            "agent": "agent-a", "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
+            "repository_id": task["repository_id"], "task_id": task["id"],
+            "idempotency_key": "prizm-sync-1",
+        }
+        def capture(payload):
+            request = urllib.request.Request(
+                f"{api_server['base_url']}/capture", data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            return json.loads(urllib.request.urlopen(request).read())
+        first = capture(body)
+        second = capture(body)
+        assert first["id"] == second["id"]
+        changed = dict(body, text="different")
+        request = urllib.request.Request(
+            f"{api_server['base_url']}/capture", data=json.dumps(changed).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(request)
+        assert error.value.code == 409
+
 
 class TestTaskSessionContinuityEndpoints:
     @staticmethod

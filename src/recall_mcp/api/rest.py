@@ -1190,6 +1190,10 @@ class RecallHandler(BaseHTTPRequestHandler):
                 {"error": str(error), "code": error.code},
                 status=_continuity_status(error),
             )
+        except ValueError as error:
+            self._safe_json_response(
+                {"error": str(error), "code": "idempotency_conflict"}, status=409
+            )
         except Exception as e:
             if _is_client_disconnect(e):
                 logger.debug(f"GET {path} client disconnected before response was sent")
@@ -1789,6 +1793,7 @@ class RecallHandler(BaseHTTPRequestHandler):
                     repository_id=body.get("repository_id"),
                     task_id=body.get("task_id"),
                     session_id=body.get("session_id"),
+                    idempotency_key=body.get("idempotency_key"),
                 )
                 self._json_response(result, status=201)
 
@@ -1869,6 +1874,13 @@ class RecallHandler(BaseHTTPRequestHandler):
                     project=project,
                     agent=agent,
                     tier=None,
+                    user_id=body.get("owner_id") or body.get("user_id"),
+                    workspace_id=body.get("workspace_id"),
+                    project_id=body.get("project_id"),
+                    repository_id=body.get("repository_id"),
+                    task_id=body.get("task_id"),
+                    session_id=body.get("session_id"),
+                    idempotency_key=body.get("idempotency_key"),
                 )
                 self._json_response(result, status=201)
 

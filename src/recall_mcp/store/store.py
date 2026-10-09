@@ -156,6 +156,8 @@ class MemoryStore:
         session_id: Optional[str] = None,
         category: Optional[str] = None,
         tier: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+        idempotency_hash: Optional[str] = None,
     ) -> tuple[str, str]:
         """Atomically persist a raw capture and its processing job."""
         now = time.time()
@@ -163,16 +165,37 @@ class MemoryStore:
         job_id = f"outbox_{uuid.uuid4().hex}"
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            if idempotency_key:
+                existing = conn.execute(
+                    """
+                    SELECT id, idempotency_hash FROM raw_captures
+                    WHERE COALESCE(user_id, '') = COALESCE(?, '')
+                      AND COALESCE(workspace_id, '') = COALESCE(?, '')
+                      AND COALESCE(project_id, '') = COALESCE(?, '')
+                      AND COALESCE(repository_id, '') = COALESCE(?, '')
+                      AND COALESCE(task_id, '') = COALESCE(?, '')
+                      AND COALESCE(session_id, '') = COALESCE(?, '')
+                      AND agent = ? AND idempotency_key = ?
+                    """,
+                    (user_id, workspace_id, project_id, repository_id, task_id, session_id, agent, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    if existing[1] != idempotency_hash:
+                        raise ValueError("idempotency key is already bound to a different capture")
+                    job = conn.execute("SELECT id FROM outbox_jobs WHERE raw_capture_id = ?", (existing[0],)).fetchone()
+                    if job is None:
+                        raise RuntimeError("idempotent capture is missing its outbox job")
+                    return str(existing[0]), str(job[0])
             conn.execute(
                 """
                 INSERT INTO raw_captures (
                     id, content, source, project, agent,
                     user_id, workspace_id, project_id, repository_id,
                     task_id, session_id,
-                    requested_category, requested_tier,
+                    requested_category, requested_tier, idempotency_key, idempotency_hash,
                     received_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     capture_id,
@@ -188,6 +211,8 @@ class MemoryStore:
                     session_id,
                     category,
                     tier,
+                    idempotency_key,
+                    idempotency_hash,
                     now,
                     now,
                 ),
@@ -217,6 +242,16 @@ class MemoryStore:
             content, source=source, project=project, agent=agent
         )
         return capture_id
+
+    def completed_capture(self, capture_id: str) -> tuple[str | None, str] | None:
+        """Return terminal capture identity without reviving its outbox job."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT memory_id, status FROM raw_captures WHERE id = ?", (capture_id,)
+            ).fetchone()
+        if row is None or row[1] not in ("complete", "skipped", "dead"):
+            return None
+        return (row[0], str(row[1]))
 
     def claim_outbox_job(
         self,
