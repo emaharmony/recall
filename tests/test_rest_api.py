@@ -393,6 +393,75 @@ class TestCaptureEndpoint:
             urllib.request.urlopen(request)
         assert error.value.code == 409
 
+    def test_capture_idempotency_rejects_actor_or_scope_collision(self, api_server):
+        pipeline = api_server["pipeline"]
+        task = pipeline.task_service.create_task(
+            user_id="owner-collision", workspace_id="workspace-collision", project_id="project-collision",
+            repository_id="repo-collision", title="Capture", objective="Capture once",
+            created_by="agent-a", canonical_path="/work/collision",
+        )
+        base = {
+            "text": "A capture with an actor binding", "source": "prizm",
+            "agent": "agent-a", "user_id": task["user_id"],
+            "workspace_id": task["workspace_id"], "project_id": task["project_id"],
+            "repository_id": task["repository_id"], "task_id": task["id"],
+            "idempotency_key": "prizm-cross-actor",
+        }
+
+        def capture(payload):
+            request = urllib.request.Request(
+                f"{api_server['base_url']}/capture", data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            return json.loads(urllib.request.urlopen(request).read())
+
+        first = capture(base)
+        with pytest.raises(urllib.error.HTTPError) as actor_error:
+            capture(dict(base, agent="agent-b"))
+        assert actor_error.value.code == 409
+
+        other_task = pipeline.task_service.create_task(
+            user_id="owner-other", workspace_id="workspace-other", project_id="project-other",
+            repository_id="repo-other", title="Other capture", objective="Other scope",
+            created_by="agent-a", canonical_path="/work/other-collision",
+        )
+        with pytest.raises(urllib.error.HTTPError) as scope_error:
+            capture({
+                **base,
+                "user_id": other_task["user_id"],
+                "workspace_id": other_task["workspace_id"],
+                "project_id": other_task["project_id"],
+                "repository_id": other_task["repository_id"],
+                "task_id": other_task["id"],
+            })
+        assert scope_error.value.code == 409
+
+        with pipeline.store._connect() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM raw_captures WHERE idempotency_key = ?",
+                (base["idempotency_key"],),
+            ).fetchone()[0]
+        assert count == 1
+        assert first["id"]
+
+    def test_v1_ingest_without_idempotency_key_keeps_connector_compatibility(self, api_server):
+        body = {
+            "content": "A legacy Prism connector capture",
+            "source_agent": "prism:trusted",
+            "category": "decision",
+            "scope": "project",
+            "project_id": "prism",
+        }
+        request = urllib.request.Request(
+            f"{api_server['base_url']}/v1/memory/ingest",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        response = urllib.request.urlopen(request)
+        result = json.loads(response.read())
+        assert response.status == 201
+        assert result["decision"] != "SKIP"
+
     def test_capture_idempotency_replays_permanent_failure(self, api_server):
         pipeline = api_server["pipeline"]
         task = pipeline.task_service.create_task(

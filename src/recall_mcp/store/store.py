@@ -186,6 +186,21 @@ class MemoryStore:
                     if job is None:
                         raise RuntimeError("idempotent capture is missing its outbox job")
                     return str(existing[0]), str(job[0])
+                # A key is caller-owned identity, so silently creating a new
+                # capture when its actor or formal scope changes would allow a
+                # retry to fork across capture entry points.  Keep this check
+                # in the shared enqueue transaction so REST, MCP, NATS, and
+                # library callers receive the same conflict behavior.
+                collision = conn.execute(
+                    """
+                    SELECT id FROM raw_captures
+                    WHERE idempotency_key = ?
+                    LIMIT 1
+                    """,
+                    (idempotency_key,),
+                ).fetchone()
+                if collision is not None:
+                    raise ValueError("idempotency key is already bound to a different capture")
             conn.execute(
                 """
                 INSERT INTO raw_captures (
