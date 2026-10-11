@@ -75,6 +75,7 @@ PYTHON_COSINE_FALLBACK_LIMIT = 20000
 # Standard RRF constant (k=60 is the literature default)
 RRF_K = 60
 
+
 @dataclass
 class SearchResult:
     """A single search result with score and metadata."""
@@ -310,8 +311,16 @@ class HybridSearch:
                 # No usable tokens (empty/whitespace/punctuation-only query) —
                 # an empty MATCH would error, so go straight to LIKE.
                 return self._like_fallback(
-                    conn, query, category, tier, limit, project, agent,
-                    formal_scope, scope_columns, include_cold,
+                    conn,
+                    query,
+                    category,
+                    tier,
+                    limit,
+                    project,
+                    agent,
+                    formal_scope,
+                    scope_columns,
+                    include_cold,
                 )
 
             try:
@@ -367,8 +376,16 @@ class HybridSearch:
                 else:
                     logger.warning(f"FTS5 search failed: {e}, using LIKE fallback")
                 results = self._like_fallback(
-                    conn, query, category, tier, limit, project, agent,
-                    formal_scope, scope_columns, include_cold,
+                    conn,
+                    query,
+                    category,
+                    tier,
+                    limit,
+                    project,
+                    agent,
+                    formal_scope,
+                    scope_columns,
+                    include_cold,
                 )
 
         return results
@@ -631,9 +648,7 @@ class HybridSearch:
                     + where_sql
                     + " ORDER BY vector_distance ASC LIMIT 2000"
                 )
-                rows = conn.execute(
-                    vector_sql, [query_embedding, *params]
-                ).fetchall()
+                rows = conn.execute(vector_sql, [query_embedding, *params]).fetchall()
                 sqlite_vec_enabled = True
             except (ImportError, AttributeError, sqlite3.Error) as exc:
                 logger.debug(
@@ -644,11 +659,7 @@ class HybridSearch:
             if rows is None:
                 # No recency bias here either — see search_with_embedding's
                 # fallback comment above for why.
-                sql = (
-                    "SELECT memory_id, embedding "
-                    + where_sql
-                    + " LIMIT ?"
-                )
+                sql = "SELECT memory_id, embedding " + where_sql + " LIMIT ?"
                 rows = conn.execute(
                     sql, [*params, PYTHON_COSINE_FALLBACK_LIMIT]
                 ).fetchall()

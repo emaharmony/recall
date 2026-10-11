@@ -66,12 +66,15 @@ def _setup(tmp, *, chunking_enabled: bool = True):
 
 
 def _chunk_rows(db, mem_id):
-    with sqlite3.connect(str(db)) as conn:
+    conn = sqlite3.connect(str(db))
+    try:
         conn.row_factory = sqlite3.Row
         return conn.execute(
             "SELECT embedding_model, embedding FROM memory_chunks WHERE memory_id = ?",
             (mem_id,),
         ).fetchall()
+    finally:
+        conn.close()
 
 
 def test_backfill_chunks_legacy_memory():

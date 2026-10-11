@@ -27,6 +27,8 @@ WHY PIPELINE?
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
 import re
 import threading
 import time
@@ -120,6 +122,7 @@ class MemoryPipeline:
             # produces silently wrong search results.
             try:
                 import sqlite3 as _sqlite3
+
                 _conn = _sqlite3.connect(str(self.settings.DB_PATH))
                 _existing = _conn.execute(
                     "SELECT DISTINCT embedding_model FROM memories "
@@ -281,6 +284,7 @@ class MemoryPipeline:
         repository_id: Optional[str] = None,
         task_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict:
         """Durably enqueue a capture and wait briefly for derived processing."""
         if self._closed:
@@ -319,6 +323,28 @@ class MemoryPipeline:
                     raise ContinuityError(
                         "session is outside the requested task", code="scope_mismatch"
                     )
+        idempotency_hash = None
+        if idempotency_key:
+            idempotency_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "text": text,
+                        "source": source,
+                        "category": category,
+                        "tier": tier,
+                        "project": project,
+                        "agent": agent,
+                        "user_id": user_id,
+                        "workspace_id": workspace_id,
+                        "project_id": project_id,
+                        "repository_id": repository_id,
+                        "task_id": task_id,
+                        "session_id": session_id,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
         capture_id, _job_id = self.store.enqueue_capture(
             text,
             source=source,
@@ -332,7 +358,29 @@ class MemoryPipeline:
             session_id=session_id,
             category=category,
             tier=tier,
+            idempotency_key=idempotency_key,
+            idempotency_hash=idempotency_hash,
         )
+        # A replay can find a terminal outbox row after the original caller
+        # received its response. Do not register a waiter for completed work:
+        # there will be no future notification, and the original remote ID is
+        # the idempotency result.
+        completed = self.store.completed_capture(capture_id)
+        if completed is not None:
+            original_id, status = completed
+            if status == "failed":
+                return {
+                    "id": capture_id,
+                    "decision": "FAILED",
+                    "processing_status": "failed",
+                    "idempotent_replay": True,
+                }
+            return {
+                "id": original_id,
+                "decision": "SKIP" if status == "skipped" else "ACCEPT",
+                "idempotent_replay": True,
+                "processing_status": "complete",
+            }
         waiter = self.outbox_dispatcher.register_waiter(capture_id)
         self.outbox_dispatcher.notify()
         try:

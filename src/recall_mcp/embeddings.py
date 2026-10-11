@@ -86,9 +86,7 @@ class OllamaEmbeddingProvider:
         embeddings = body.get("embeddings")
         if not isinstance(embeddings, list) or len(embeddings) != len(texts):
             raise EmbeddingError("Ollama returned a mismatched batch of embeddings")
-        return [
-            self._finalize(text, vector) for text, vector in zip(texts, embeddings)
-        ]
+        return [self._finalize(text, vector) for text, vector in zip(texts, embeddings)]
 
     def _call_embed_api(self, texts: list[str]) -> dict:
         payload_input = texts[0] if len(texts) == 1 else texts
